@@ -121,11 +121,14 @@ def fetch_hashrate_mempool():
     current_hr = data.get("currentHashrate", 0)  # H/s
     current_ehs = current_hr / 1e18
 
+    # Only keep the last 14 days of non-zero data
+    cutoff = time.time() - (14 * 24 * 3600)
     history = []
     for point in data.get("hashrates", []):
         ts = point.get("timestamp", 0)
         val = point.get("avgHashrate", 0) / 1e18  # -> EH/s
-        history.append({"timestamp": ts, "hashrate_ehs": round(val, 2)})
+        if ts >= cutoff and val > 0:
+            history.append({"timestamp": ts, "hashrate_ehs": round(val, 2)})
 
     return {
         "source": "mempool.space",
@@ -142,12 +145,14 @@ def fetch_hashrate_blockchain_info():
     resp.raise_for_status()
     data = resp.json()
 
+    cutoff = time.time() - (14 * 24 * 3600)
     values = data.get("values", [])
     history = []
     for point in values:
         ts = point.get("x", 0)
         val = point.get("y", 0) / 1e6  # blockchain.info returns TH/s -> EH/s
-        history.append({"timestamp": ts, "hashrate_ehs": round(val, 2)})
+        if ts >= cutoff and val > 0:
+            history.append({"timestamp": ts, "hashrate_ehs": round(val, 2)})
 
     current_ehs = history[-1]["hashrate_ehs"] if history else 0
     return {
