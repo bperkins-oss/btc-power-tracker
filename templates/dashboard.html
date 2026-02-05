@@ -348,6 +348,13 @@
   </div>
 </div>
 
+<div class="card" style="margin-bottom:24px">
+  <h2>CONUS Power Draw &mdash; Last 2 Weeks</h2>
+  <div class="chart-container">
+    <canvas id="pwrChart"></canvas>
+  </div>
+</div>
+
 <!-- CONUS State Map -->
 <div class="card map-section">
   <h2>Estimated Mining Power by State</h2>
@@ -459,6 +466,57 @@ const hrChart = new Chart(ctx, {
       },
       y: {
         ticks: { color: '#8b949e', callback: (v) => v + ' EH/s' },
+        grid: { color: 'rgba(48,54,61,0.5)' },
+      }
+    }
+  }
+});
+
+// ── CONUS Power Chart ────────────────────────────────────────
+const pwrCtx = document.getElementById('pwrChart').getContext('2d');
+const pwrChart = new Chart(pwrCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'CONUS Power (GW)',
+      data: [],
+      borderColor: '#3fb950',
+      backgroundColor: 'rgba(63,185,80,0.1)',
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.3,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          title: (items) => new Date(items[0].parsed.x).toLocaleString(),
+          label: (item) => `${item.parsed.y.toFixed(2)} GW`
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear',
+        ticks: {
+          color: '#8b949e',
+          callback: (v) => {
+            const d = new Date(v);
+            return d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
+          },
+          maxTicksLimit: 8,
+        },
+        grid: { color: 'rgba(48,54,61,0.5)' },
+      },
+      y: {
+        ticks: { color: '#8b949e', callback: (v) => v + ' GW' },
         grid: { color: 'rgba(48,54,61,0.5)' },
       }
     }
@@ -587,12 +645,21 @@ async function fetchHistory() {
     const res = await fetch('/api/history');
     const d = await res.json();
     const hist = d.history || [];
-    hrChart.data.labels = hist.map(p => p.timestamp * 1000);
+    const timestamps = hist.map(p => p.timestamp * 1000);
+
+    hrChart.data.labels = timestamps;
     hrChart.data.datasets[0].data = hist.map(p => ({
       x: p.timestamp * 1000,
       y: p.hashrate_ehs
     }));
     hrChart.update('none');
+
+    pwrChart.data.labels = timestamps;
+    pwrChart.data.datasets[0].data = hist.map(p => ({
+      x: p.timestamp * 1000,
+      y: p.conus_power_gw
+    }));
+    pwrChart.update('none');
   } catch (e) { /* retry next cycle */ }
 }
 

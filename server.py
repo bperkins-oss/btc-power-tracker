@@ -209,9 +209,13 @@ def api_hashrate():
 @app.route("/api/history")
 def api_history():
     data = cached_get("hashrate", get_hashrate_data)
+    history = []
+    for point in data["history"]:
+        conus_gw, _ = compute_power(point["hashrate_ehs"])
+        history.append({**point, "conus_power_gw": conus_gw})
     return jsonify({
         "source": data["source"],
-        "history": data["history"],
+        "history": history,
     })
 
 
