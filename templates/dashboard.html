@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bitcoin Mining Power Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --orange: #f7931a;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --red: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .header h1 {
+    font-size: 1.6rem;
+    color: var(--orange);
+    margin-bottom: 4px;
+  }
+  .header .subtitle {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-card .label {
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+  .stat-card .value {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  .stat-card .unit {
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+  .stat-card .source {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .value-orange { color: var(--orange); }
+  .value-green  { color: var(--green); }
+  .value-blue   { color: var(--blue); }
+  .value-red    { color: var(--red); }
+
+  .grid-2col {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 800px) {
+    .grid-2col { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card h2 {
+    font-size: 1rem;
+    margin-bottom: 16px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .chart-container {
+    position: relative;
+    width: 100%;
+    height: 300px;
+  }
+
+  /* Power Gauge */
+  .gauge-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+  }
+  .gauge {
+    position: relative;
+    width: 180px;
+    height: 90px;
+    overflow: hidden;
+  }
+  .gauge-bg, .gauge-fill {
+    position: absolute;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    border: 18px solid transparent;
+    top: 0; left: 0;
+    clip-path: inset(0 0 50% 0);
+  }
+  .gauge-bg   { border-top-color: var(--border); border-left-color: var(--border); border-right-color: var(--border); }
+  .gauge-fill {
+    border-top-color: var(--orange);
+    border-left-color: var(--orange);
+    border-right-color: var(--orange);
+    transform-origin: center center;
+    transition: transform 1s ease;
+  }
+  .gauge-label {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    text-align: center;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--orange);
+  }
+  .gauge-sublabel {
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+  .gauge-range {
+    display: flex;
+    justify-content: space-between;
+    width: 180px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    margin-top: 4px;
+  }
+
+  /* CONUS Map */
+  .map-section {
+    margin-bottom: 24px;
+  }
+  .map-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .map-grid { grid-template-columns: 1fr; }
+  }
+  #conus-map svg {
+    width: 100%;
+    height: auto;
+  }
+  #conus-map .state {
+    stroke: var(--bg);
+    stroke-width: 0.8;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  #conus-map .state:hover {
+    opacity: 0.8;
+    stroke: var(--text);
+    stroke-width: 1.5;
+  }
+  .map-tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: rgba(22,27,34,0.95);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    display: none;
+    z-index: 100;
+    line-height: 1.5;
+  }
+  .map-tooltip .tt-name {
+    font-weight: 700;
+    color: var(--orange);
+  }
+  .map-legend {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .legend-bar {
+    height: 10px;
+    flex: 1;
+    border-radius: 4px;
+  }
+  .state-list {
+    max-height: 420px;
+    overflow-y: auto;
+    font-size: 0.82rem;
+  }
+  .state-list::-webkit-scrollbar { width: 6px; }
+  .state-list::-webkit-scrollbar-track { background: var(--card); }
+  .state-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .state-row {
+    display: grid;
+    grid-template-columns: 1fr 65px 50px;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+  .state-row:last-child { border-bottom: none; }
+  .state-row .sname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .state-row .sval { text-align: right; font-variant-numeric: tabular-nums; }
+  .state-row .spct { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .state-list-header {
+    display: grid;
+    grid-template-columns: 1fr 65px 50px;
+    gap: 8px;
+    padding: 0 0 8px 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .state-list-header span:nth-child(2),
+  .state-list-header span:nth-child(3) { text-align: right; }
+
+  /* Fleet Table */
+  .fleet-section { margin-bottom: 24px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+  .bar-cell { width: 120px; }
+  .bar {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--orange);
+    transition: width 0.5s ease;
+  }
+
+  .footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.75rem;
+    padding: 16px 0;
+  }
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .status-dot.live { background: var(--green); }
+  .status-dot.stale { background: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Bitcoin Mining Power Tracker</h1>
+  <p class="subtitle">
+    <span class="status-dot live" id="statusDot"></span>
+    <span id="statusText">Connecting...</span>
+  </p>
+</div>
+
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="label">Network Hash Rate</div>
+    <div class="value value-orange" id="hashrate">--</div>
+    <div class="source" id="hrSource">loading...</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">CONUS Power Draw</div>
+    <div class="value value-green" id="conusPower">--</div>
+    <div class="source">37.8% CONUS share (CBECI)</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Global Power Draw</div>
+    <div class="value value-blue" id="globalPower">--</div>
+    <div class="source">Fleet-weighted estimate</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Fleet Efficiency</div>
+    <div class="value value-red" id="efficiency">--</div>
+    <div class="source">Weighted ASIC mix</div>
+  </div>
+</div>
+
+<div class="grid-2col">
+  <div class="card">
+    <h2>Hash Rate &mdash; Last 2 Weeks</h2>
+    <div class="chart-container">
+      <canvas id="hrChart"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>CONUS Power Gauge</h2>
+    <div class="gauge-wrap">
+      <div class="gauge">
+        <div class="gauge-bg"></div>
+        <div class="gauge-fill" id="gaugeFill"></div>
+        <div class="gauge-label" id="gaugeValue">-- GW</div>
+      </div>
+      <div class="gauge-range"><span>0 GW</span><span>15 GW</span></div>
+      <div class="gauge-sublabel">Estimated CONUS Bitcoin mining<br>power consumption</div>
+    </div>
+  </div>
+</div>
+
+<!-- CONUS State Map -->
+<div class="card map-section">
+  <h2>Estimated Mining Power by State</h2>
+  <div class="map-grid">
+    <div>
+      <div id="conus-map"></div>
+      <div class="map-legend">
+        <span>0 MW</span>
+        <div class="legend-bar" style="background: linear-gradient(to right, #1a1e24, #4a2a0a, #f7931a, #ffcc66);"></div>
+        <span id="legendMax">-- MW</span>
+      </div>
+    </div>
+    <div>
+      <div class="state-list-header">
+        <span>State</span>
+        <span>Power</span>
+        <span>Share</span>
+      </div>
+      <div class="state-list" id="stateList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card fleet-section">
+  <h2>CONUS Fleet Model</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Miner Model</th>
+        <th>Efficiency (J/TH)</th>
+        <th>Fleet Weight</th>
+        <th class="bar-cell">Share</th>
+      </tr>
+    </thead>
+    <tbody id="fleetBody">
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">
+  Data sources: mempool.space &middot; blockchain.info &middot; CBECI &middot; Auto-refreshes every 60 s
+</div>
+
+<div class="map-tooltip" id="mapTooltip"></div>
+
+<script>
+// ── FIPS-to-Name lookup (CONUS only, no AK/HI) ─────────────
+const FIPS_TO_NAME = {
+  '01':'Alabama','04':'Arizona','05':'Arkansas','06':'California',
+  '08':'Colorado','09':'Connecticut','10':'Delaware','12':'Florida',
+  '13':'Georgia','16':'Idaho','17':'Illinois','18':'Indiana',
+  '19':'Iowa','20':'Kansas','21':'Kentucky','22':'Louisiana',
+  '23':'Maine','24':'Maryland','25':'Massachusetts','26':'Michigan',
+  '27':'Minnesota','28':'Mississippi','29':'Missouri','30':'Montana',
+  '31':'Nebraska','32':'Nevada','33':'New Hampshire','34':'New Jersey',
+  '35':'New Mexico','36':'New York','37':'North Carolina','38':'North Dakota',
+  '39':'Ohio','40':'Oklahoma','41':'Oregon','42':'Pennsylvania',
+  '44':'Rhode Island','45':'South Carolina','46':'South Dakota',
+  '47':'Tennessee','48':'Texas','49':'Utah','50':'Vermont',
+  '51':'Virginia','53':'Washington','54':'West Virginia','55':'Wisconsin',
+  '56':'Wyoming'
+};
+const EXCLUDE_FIPS = new Set(['02','15','60','66','69','72','78']); // AK, HI, territories
+
+let stateData = {};  // name -> { share, power_mw }
+
+// ── Chart Setup ─────────────────────────────────────────────
+const ctx = document.getElementById('hrChart').getContext('2d');
+const hrChart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Hash Rate (EH/s)',
+      data: [],
+      borderColor: '#f7931a',
+      backgroundColor: 'rgba(247,147,26,0.1)',
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.3,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          title: (items) => new Date(items[0].parsed.x).toLocaleString(),
+          label: (item) => `${item.parsed.y.toFixed(1)} EH/s`
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear',
+        ticks: {
+          color: '#8b949e',
+          callback: (v) => {
+            const d = new Date(v);
+            return d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
+          },
+          maxTicksLimit: 8,
+        },
+        grid: { color: 'rgba(48,54,61,0.5)' },
+      },
+      y: {
+        ticks: { color: '#8b949e', callback: (v) => v + ' EH/s' },
+        grid: { color: 'rgba(48,54,61,0.5)' },
+      }
+    }
+  }
+});
+
+// ── Gauge ───────────────────────────────────────────────────
+const GAUGE_MAX = 15;
+function setGauge(gw) {
+  const pct = Math.min(gw / GAUGE_MAX, 1);
+  const deg = pct * 180;
+  document.getElementById('gaugeFill').style.transform = `rotate(${deg}deg)`;
+  document.getElementById('gaugeValue').textContent = gw.toFixed(2) + ' GW';
+}
+
+// ── Color scale for map ─────────────────────────────────────
+function powerColor(mw, maxMw) {
+  if (!maxMw || mw <= 0) return '#1a1e24';
+  const t = Math.pow(mw / maxMw, 0.5);  // sqrt scale for better low-end visibility
+  const r = Math.round(26 + t * (247 - 26));
+  const g = Math.round(30 + t * (147 - 30));
+  const b = Math.round(36 + t * (26 - 36));
+  return `rgb(${r},${g},${b})`;
+}
+
+// ── Map rendering ───────────────────────────────────────────
+let mapSvg, mapPath, mapStates, topoData;
+
+async function initMap() {
+  const resp = await fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json');
+  topoData = await resp.json();
+
+  const container = document.getElementById('conus-map');
+  const width = container.clientWidth || 800;
+  const height = width * 0.62;
+
+  mapSvg = d3.select('#conus-map')
+    .append('svg')
+    .attr('viewBox', '0 0 975 610')
+    .attr('preserveAspectRatio', 'xMidYMid meet');
+
+  const states = topojson.feature(topoData, topoData.objects.states);
+
+  // Filter out Alaska, Hawaii, territories
+  const conusStates = states.features.filter(f => {
+    const fips = String(f.id).padStart(2, '0');
+    return !EXCLUDE_FIPS.has(fips);
+  });
+
+  const tooltip = document.getElementById('mapTooltip');
+
+  mapStates = mapSvg.selectAll('.state')
+    .data(conusStates)
+    .join('path')
+    .attr('class', 'state')
+    .attr('d', d3.geoPath())
+    .attr('fill', '#1a1e24')
+    .on('mousemove', (event, d) => {
+      const fips = String(d.id).padStart(2, '0');
+      const name = FIPS_TO_NAME[fips] || 'Unknown';
+      const sd = stateData[name];
+      if (sd) {
+        tooltip.innerHTML = `<span class="tt-name">${name}</span><br>` +
+          `Power: <b>${sd.power_mw.toFixed(0)} MW</b><br>` +
+          `Share: ${(sd.share * 100).toFixed(1)}%`;
+      } else {
+        tooltip.innerHTML = `<span class="tt-name">${name}</span><br>Minimal mining`;
+      }
+      tooltip.style.display = 'block';
+      tooltip.style.left = (event.clientX + 14) + 'px';
+      tooltip.style.top = (event.clientY - 10) + 'px';
+    })
+    .on('mouseleave', () => {
+      tooltip.style.display = 'none';
+    });
+
+  // State borders
+  mapSvg.append('path')
+    .datum(topojson.mesh(topoData, topoData.objects.states, (a, b) => a !== b))
+    .attr('fill', 'none')
+    .attr('stroke', '#0d1117')
+    .attr('stroke-width', 0.8)
+    .attr('d', d3.geoPath());
+}
+
+function updateMapColors() {
+  if (!mapStates) return;
+  const maxMw = Math.max(...Object.values(stateData).map(s => s.power_mw), 1);
+  document.getElementById('legendMax').textContent = maxMw.toFixed(0) + ' MW';
+
+  mapStates.transition().duration(600)
+    .attr('fill', d => {
+      const fips = String(d.id).padStart(2, '0');
+      const name = FIPS_TO_NAME[fips];
+      const sd = stateData[name];
+      return sd ? powerColor(sd.power_mw, maxMw) : '#1a1e24';
+    });
+}
+
+// ── Fetch functions ─────────────────────────────────────────
+async function fetchHashrate() {
+  try {
+    const res = await fetch('/api/hashrate');
+    const d = await res.json();
+    document.getElementById('hashrate').innerHTML =
+      d.hashrate_ehs.toFixed(1) + '<span class="unit">EH/s</span>';
+    document.getElementById('conusPower').innerHTML =
+      d.conus_power_gw.toFixed(2) + '<span class="unit">GW</span>';
+    document.getElementById('globalPower').innerHTML =
+      d.global_power_gw.toFixed(2) + '<span class="unit">GW</span>';
+    document.getElementById('efficiency').innerHTML =
+      d.fleet_efficiency_jth.toFixed(1) + '<span class="unit">J/TH</span>';
+    document.getElementById('hrSource').textContent = 'Source: ' + d.source;
+    setGauge(d.conus_power_gw);
+    document.getElementById('statusDot').className = 'status-dot live';
+    document.getElementById('statusText').textContent =
+      'Live \u00B7 updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('statusDot').className = 'status-dot stale';
+    document.getElementById('statusText').textContent = 'Connection error';
+  }
+}
+
+async function fetchHistory() {
+  try {
+    const res = await fetch('/api/history');
+    const d = await res.json();
+    const hist = d.history || [];
+    hrChart.data.labels = hist.map(p => p.timestamp * 1000);
+    hrChart.data.datasets[0].data = hist.map(p => ({
+      x: p.timestamp * 1000,
+      y: p.hashrate_ehs
+    }));
+    hrChart.update('none');
+  } catch (e) { /* retry next cycle */ }
+}
+
+async function fetchFleet() {
+  try {
+    const res = await fetch('/api/fleet');
+    const d = await res.json();
+    const tbody = document.getElementById('fleetBody');
+    tbody.innerHTML = '';
+    d.fleet.forEach(m => {
+      const pct = (m.weight * 100).toFixed(0);
+      const barW = Math.round(m.weight / 0.20 * 100);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${m.model}</td>
+        <td>${m.efficiency}</td>
+        <td>${pct}%</td>
+        <td class="bar-cell"><div class="bar" style="width:${barW}%"></div></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) { /* ignore */ }
+}
+
+async function fetchStates() {
+  try {
+    const res = await fetch('/api/states');
+    const d = await res.json();
+    stateData = {};
+    const listEl = document.getElementById('stateList');
+    listEl.innerHTML = '';
+    (d.states || []).forEach(s => {
+      stateData[s.state] = { share: s.share, power_mw: s.power_mw };
+      const row = document.createElement('div');
+      row.className = 'state-row';
+      row.innerHTML = `
+        <span class="sname">${s.state}</span>
+        <span class="sval">${s.power_mw.toFixed(0)} MW</span>
+        <span class="spct">${(s.share * 100).toFixed(1)}%</span>
+      `;
+      listEl.appendChild(row);
+    });
+    updateMapColors();
+  } catch (e) { /* ignore */ }
+}
+
+// ── Init ────────────────────────────────────────────────────
+(async () => {
+  await initMap();
+  await Promise.all([fetchHashrate(), fetchHistory(), fetchFleet(), fetchStates()]);
+})();
+
+setInterval(() => {
+  fetchHashrate();
+  fetchHistory();
+  fetchStates();
+}, 60000);
+</script>
+</body>
+</html>
