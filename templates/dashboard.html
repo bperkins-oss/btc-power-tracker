@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bitcoin Mining Power Tracker</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
 <style>
@@ -453,15 +454,9 @@ const hrChart = new Chart(ctx, {
     },
     scales: {
       x: {
-        type: 'linear',
-        ticks: {
-          color: '#8b949e',
-          callback: (v) => {
-            const d = new Date(v);
-            return d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
-          },
-          maxTicksLimit: 8,
-        },
+        type: 'time',
+        time: { unit: 'day', tooltipFormat: 'MMM d, yyyy' },
+        ticks: { color: '#8b949e', maxTicksLimit: 8 },
         grid: { color: 'rgba(48,54,61,0.5)' },
       },
       y: {
@@ -504,15 +499,9 @@ const pwrChart = new Chart(pwrCtx, {
     },
     scales: {
       x: {
-        type: 'linear',
-        ticks: {
-          color: '#8b949e',
-          callback: (v) => {
-            const d = new Date(v);
-            return d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
-          },
-          maxTicksLimit: 8,
-        },
+        type: 'time',
+        time: { unit: 'day', tooltipFormat: 'MMM d, yyyy' },
+        ticks: { color: '#8b949e', maxTicksLimit: 8 },
         grid: { color: 'rgba(48,54,61,0.5)' },
       },
       y: {
