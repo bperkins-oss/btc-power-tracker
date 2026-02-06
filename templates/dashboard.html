@@ -278,6 +278,46 @@
     transition: width 0.5s ease;
   }
 
+  /* Days input control */
+  .days-control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .days-control label {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .days-control input {
+    width: 80px;
+    padding: 6px 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.9rem;
+    text-align: center;
+  }
+  .days-control input:focus {
+    outline: none;
+    border-color: var(--orange);
+  }
+  .days-control button {
+    padding: 6px 16px;
+    background: var(--orange);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .days-control button:hover {
+    opacity: 0.85;
+  }
+
   .footer {
     text-align: center;
     color: var(--muted);
@@ -328,9 +368,16 @@
   </div>
 </div>
 
+<div class="days-control">
+  <label for="daysInput">History Range:</label>
+  <input type="number" id="daysInput" min="0" max="1095" value="20" placeholder="days">
+  <label style="color:var(--muted);font-size:0.85rem;">days</label>
+  <button onclick="applyDays()">Apply</button>
+</div>
+
 <div class="grid-2col">
   <div class="card">
-    <h2>Hash Rate &mdash; Last 2 Weeks</h2>
+    <h2 id="hrChartTitle">Hash Rate &mdash; Last 20 Days</h2>
     <div class="chart-container">
       <canvas id="hrChart"></canvas>
     </div>
@@ -350,7 +397,7 @@
 </div>
 
 <div class="card" style="margin-bottom:24px">
-  <h2>CONUS Power Draw &mdash; Last 2 Weeks</h2>
+  <h2 id="pwrChartTitle">CONUS Power Draw &mdash; Last 20 Days</h2>
   <div class="chart-container">
     <canvas id="pwrChart"></canvas>
   </div>
@@ -421,6 +468,7 @@ const FIPS_TO_NAME = {
 const EXCLUDE_FIPS = new Set(['02','15','60','66','69','72','78']); // AK, HI, territories
 
 let stateData = {};  // name -> { share, power_mw }
+let currentDays = 20;  // default history range
 
 // ── Chart Setup ─────────────────────────────────────────────
 const ctx = document.getElementById('hrChart').getContext('2d');
@@ -608,7 +656,7 @@ function updateMapColors() {
 // ── Fetch functions ─────────────────────────────────────────
 async function fetchHashrate() {
   try {
-    const res = await fetch('/api/hashrate');
+    const res = await fetch(`/api/hashrate?days=${currentDays}`);
     const d = await res.json();
     document.getElementById('hashrate').innerHTML =
       d.hashrate_ehs.toFixed(1) + '<span class="unit">EH/s</span>';
@@ -631,7 +679,7 @@ async function fetchHashrate() {
 
 async function fetchHistory() {
   try {
-    const res = await fetch('/api/history');
+    const res = await fetch(`/api/history?days=${currentDays}`);
     const d = await res.json();
     const hist = d.history || [];
     const timestamps = hist.map(p => p.timestamp * 1000);
@@ -694,6 +742,37 @@ async function fetchStates() {
     updateMapColors();
   } catch (e) { /* ignore */ }
 }
+
+// ── Days control ────────────────────────────────────────────
+function applyDays() {
+  const input = document.getElementById('daysInput');
+  let days = parseInt(input.value, 10);
+  if (isNaN(days) || days < 0) days = 0;
+  if (days > 1095) days = 1095;
+  input.value = days;
+  currentDays = days;
+
+  // Update chart titles
+  const label = days === 0 ? 'Current Only' : `Last ${days} Day${days !== 1 ? 's' : ''}`;
+  document.getElementById('hrChartTitle').textContent = `Hash Rate \u2014 ${label}`;
+  document.getElementById('pwrChartTitle').textContent = `CONUS Power Draw \u2014 ${label}`;
+
+  // Pick a sensible time axis unit
+  let unit = 'day';
+  if (days > 180) unit = 'month';
+  else if (days > 30) unit = 'week';
+  hrChart.options.scales.x.time.unit = unit;
+  pwrChart.options.scales.x.time.unit = unit;
+
+  // Refresh data
+  fetchHashrate();
+  fetchHistory();
+}
+
+// Allow Enter key to apply
+document.getElementById('daysInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') applyDays();
+});
 
 // ── Init ────────────────────────────────────────────────────
 (async () => {

@@ -3,7 +3,7 @@
 
 import time
 import requests
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
@@ -104,25 +104,43 @@ def cached_get(key, fetch_fn):
 # ---------------------------------------------------------------------------
 # API Fetchers
 # ---------------------------------------------------------------------------
-MEMPOOL_HASHRATE_URL = "https://mempool.space/api/v1/mining/hashrate/2w"
-BLOCKCHAIN_INFO_URL = (
-    "https://api.blockchain.info/charts/hash-rate?timespan=14days&format=json"
-)
+def _mempool_period(days):
+    """Map a day count to the smallest mempool.space period that covers it."""
+    if days <= 3:
+        return "3d"
+    if days <= 7:
+        return "1w"
+    if days <= 14:
+        return "2w"
+    if days <= 30:
+        return "1m"
+    if days <= 90:
+        return "3m"
+    if days <= 180:
+        return "6m"
+    if days <= 365:
+        return "1y"
+    if days <= 730:
+        return "2y"
+    if days <= 1095:
+        return "3y"
+    return "all"
 
 
-def fetch_hashrate_mempool():
+def fetch_hashrate_mempool(days=20):
     """Fetch current + recent hash rates from mempool.space.
     Returns dict with currentHashrate (EH/s) and history list.
     """
-    resp = requests.get(MEMPOOL_HASHRATE_URL, timeout=15)
+    period = _mempool_period(days)
+    url = f"https://mempool.space/api/v1/mining/hashrate/{period}"
+    resp = requests.get(url, timeout=15)
     resp.raise_for_status()
     data = resp.json()
 
     current_hr = data.get("currentHashrate", 0)  # H/s
     current_ehs = current_hr / 1e18
 
-    # Only keep the last 14 days of non-zero data
-    cutoff = time.time() - (14 * 24 * 3600)
+    cutoff = time.time() - (days * 24 * 3600)
     history = []
     for point in data.get("hashrates", []):
         ts = point.get("timestamp", 0)
@@ -137,15 +155,16 @@ def fetch_hashrate_mempool():
     }
 
 
-def fetch_hashrate_blockchain_info():
+def fetch_hashrate_blockchain_info(days=20):
     """Fallback: fetch hash rate from blockchain.info.
     Returns dict with currentHashrate (EH/s) and history list.
     """
-    resp = requests.get(BLOCKCHAIN_INFO_URL, timeout=15)
+    url = f"https://api.blockchain.info/charts/hash-rate?timespan={days}days&format=json"
+    resp = requests.get(url, timeout=15)
     resp.raise_for_status()
     data = resp.json()
 
-    cutoff = time.time() - (14 * 24 * 3600)
+    cutoff = time.time() - (days * 24 * 3600)
     values = data.get("values", [])
     history = []
     for point in values:
@@ -162,14 +181,14 @@ def fetch_hashrate_blockchain_info():
     }
 
 
-def get_hashrate_data():
+def get_hashrate_data(days=20):
     """Try mempool.space first, fall back to blockchain.info."""
     try:
-        return fetch_hashrate_mempool()
+        return fetch_hashrate_mempool(days)
     except Exception:
         pass
     try:
-        return fetch_hashrate_blockchain_info()
+        return fetch_hashrate_blockchain_info(days)
     except Exception:
         return {
             "source": "unavailable",
@@ -199,7 +218,10 @@ def index():
 
 @app.route("/api/hashrate")
 def api_hashrate():
-    data = cached_get("hashrate", get_hashrate_data)
+    days = request.args.get("days", 20, type=int)
+    days = max(0, min(days, 1095))  # clamp 0-1095
+    cache_key = f"hashrate_{days}"
+    data = cached_get(cache_key, lambda: get_hashrate_data(days))
     conus_gw, global_gw = compute_power(data["hashrate_ehs"])
     return jsonify({
         "hashrate_ehs": data["hashrate_ehs"],
@@ -213,7 +235,10 @@ def api_hashrate():
 
 @app.route("/api/history")
 def api_history():
-    data = cached_get("hashrate", get_hashrate_data)
+    days = request.args.get("days", 20, type=int)
+    days = max(0, min(days, 1095))  # clamp 0-1095
+    cache_key = f"hashrate_{days}"
+    data = cached_get(cache_key, lambda: get_hashrate_data(days))
     history = []
     for point in data["history"]:
         conus_gw, _ = compute_power(point["hashrate_ehs"])
